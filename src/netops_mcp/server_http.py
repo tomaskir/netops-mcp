@@ -372,14 +372,24 @@ class NetOpsMCPHTTPServer:
             # Add CORS middleware if enabled
             if self.config.security.enable_cors:
                 from starlette.middleware.cors import CORSMiddleware
+                cors_origins = self.config.security.cors_origins
+                # A wildcard origin with credentials is rejected by browsers and
+                # is a security footgun; only allow credentials for an explicit
+                # origin allowlist.
+                allow_credentials = "*" not in cors_origins
+                if not allow_credentials:
+                    self.logger.warning(
+                        "CORS origins include '*'; disabling allow_credentials. "
+                        "Set an explicit origin allowlist to use credentials."
+                    )
                 app.add_middleware(
                     CORSMiddleware,
-                    allow_origins=self.config.security.cors_origins,
-                    allow_credentials=True,
+                    allow_origins=cors_origins,
+                    allow_credentials=allow_credentials,
                     allow_methods=["*"],
                     allow_headers=["*"],
                 )
-                self.logger.info(f"CORS middleware enabled for origins: {self.config.security.cors_origins}")
+                self.logger.info(f"CORS middleware enabled for origins: {cors_origins}")
             
             # Add rate limiting middleware
             app.add_middleware(
