@@ -422,15 +422,19 @@ class NetOpsMCPHTTPServer:
             # Add authentication middleware if required
             if self.config.security.require_auth:
                 if not self.config.security.api_keys:
-                    self.logger.warning("Authentication required but no API keys configured!")
-                else:
-                    app.add_middleware(
-                        AuthenticationMiddleware,
-                        api_keys=self.config.security.api_keys,
-                        require_auth=True,
-                        exempt_paths={"/health", "/metrics"}
+                    # Fail closed: refuse to serve unauthenticated when auth was
+                    # explicitly required but misconfigured with no keys.
+                    raise RuntimeError(
+                        "require_auth is enabled but no API keys are configured; "
+                        "set api_keys in config or the API_KEYS environment variable."
                     )
-                    self.logger.info(f"Authentication enabled with {len(self.config.security.api_keys)} API key(s)")
+                app.add_middleware(
+                    AuthenticationMiddleware,
+                    api_keys=self.config.security.api_keys,
+                    require_auth=True,
+                    exempt_paths={"/health", "/metrics"}
+                )
+                self.logger.info(f"Authentication enabled with {len(self.config.security.api_keys)} API key(s)")
             
             # Add security headers middleware
             from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -441,6 +445,10 @@ class NetOpsMCPHTTPServer:
                 )
                 self.logger.info(f"Trusted host middleware enabled for: {self.config.security.allowed_hosts}")
             
+        except RuntimeError:
+            # Security misconfiguration (e.g. auth required but no keys) must be
+            # fatal rather than silently degrading to an unauthenticated server.
+            raise
         except Exception as e:
             self.logger.error(f"Error adding middleware: {e}")
 
