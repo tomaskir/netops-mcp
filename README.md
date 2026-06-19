@@ -4,38 +4,51 @@ A comprehensive Model Context Protocol (MCP) server that provides access to esse
 
 ## 🚀 Features
 
-### Network Connectivity Tools
-- **Ping**: Test host connectivity with customizable packet count and timeout
-- **Traceroute**: Trace network path with configurable max hops
-- **MTR**: Monitor network path with real-time statistics
-- **Telnet**: Test port connectivity using telnet
-- **Netcat**: Test port connectivity using netcat
+Tools are organized into groups. Every group except the always-on diagnostics
+can be turned off via configuration — see [Tool Groups](#tool-groups). The
+group key (used by config / env) is shown in parentheses.
 
-### HTTP/API Testing Tools
-- **cURL**: Execute HTTP requests with full control over headers, methods, and data
-- **HTTPie**: Alternative HTTP client with simplified syntax
-- **API Testing**: Validate API endpoints with expected status codes
+### HTTP / API Testing  (`http`)
+- **curl_request**: Execute HTTP requests with full control over headers, methods, and data
+- **httpie_request**: Alternative HTTP client with simplified syntax
+- **api_test**: Validate an API endpoint against an expected status code
 
-### DNS Tools
-- **nslookup**: Query DNS records with various record types
-- **dig**: Advanced DNS querying tool
-- **host**: Simple DNS lookup utility
+### Network Connectivity  (`connectivity`)
+- **ping_host**: Test host connectivity with customizable packet count and timeout
+- **traceroute_path**: Trace the network path with a configurable max hop count
+- **mtr_monitor**: Monitor a network path with real-time statistics
+- **telnet_connect**: Test port connectivity using telnet
+- **netcat_test**: Test port connectivity using netcat
 
-### Network Discovery Tools
-- **Nmap**: Network scanning and service enumeration
-- **Port Scanning**: Targeted port scanning capabilities
-- **Service Discovery**: Identify running services on targets
+### DNS  (`dns`)
+- **nslookup_query**: Query DNS records of various types
+- **dig_query**: Advanced DNS querying
+- **host_lookup**: Simple DNS lookup
 
-### System Monitoring Tools
-- **SS**: Socket statistics and connection monitoring
-- **Netstat**: Network statistics and connection information
-- **ARP**: Address Resolution Protocol table management
-- **ARPing**: Test ARP connectivity
+### Network Discovery  (`discovery`)
+- **nmap_scan**: Network scanning and service enumeration
+- **service_discovery**: Identify running services on a target
 
-### System Information Tools
-- **System Status**: CPU, memory, and disk usage monitoring
-- **Process List**: Running process enumeration
-- **Required Tools Check**: Verify system tool availability
+### System Network  (`system_network`)
+- **ss_connections**: Socket statistics and connection monitoring
+- **netstat_connections**: Network statistics and connection information
+- **arp_table**: Show the ARP table
+- **arping_host**: Test connectivity at the ARP layer
+
+### System Monitoring  (`monitoring`)
+- **system_status**: Combined CPU, memory, and disk overview
+- **cpu_usage**: CPU usage details
+- **memory_usage**: Memory usage details
+- **disk_usage**: Disk usage details
+- **process_list**: Running process enumeration
+
+### Security Scanning  (`security`)
+- **port_scan**: Targeted port scanning
+- **service_enumeration**: Enumerate services on a target
+
+### Server / Diagnostics  (always on)
+- **check_required_tools**: Verify availability of the underlying system tools
+- **health**: Server health check (also backs the HTTP `/health` endpoint)
 
 ## 📋 Prerequisites
 
@@ -350,6 +363,15 @@ The server will automatically create a default configuration file from `config/c
     "max_scan_timeout": 300,
     "allowed_ports": "1-65535"
   },
+  "tool_groups": {
+    "http": true,
+    "connectivity": true,
+    "dns": true,
+    "discovery": true,
+    "system_network": true,
+    "monitoring": true,
+    "security": true
+  },
   "server": {
     "host": "0.0.0.0",
     "port": 8815,
@@ -357,6 +379,30 @@ The server will automatically create a default configuration file from `config/c
   }
 }
 ```
+
+### Tool Groups
+
+Every tool belongs to a group (see [Features](#-features)). All groups are
+enabled by default; set a group to `false` to stop registering its tools
+entirely — disabled tools are not advertised in the MCP tool list, cannot be
+called, and are excluded from the `health()` inventory count. This applies to
+both the stdio and HTTP transports.
+
+The always-on diagnostics (`check_required_tools`, `health`) are not part of
+`tool_groups` and cannot be disabled, since the HTTP `/health` endpoint depends
+on them.
+
+Configure groups in `tool_groups` (above) or per group via environment
+variables, which take precedence over the file:
+
+```bash
+# Disable scanning/discovery on a locked-down host
+TOOL_GROUP_DISCOVERY=false
+TOOL_GROUP_SECURITY=false
+```
+
+Group keys: `http`, `connectivity`, `dns`, `discovery`, `system_network`,
+`monitoring`, `security`.
 
 ## 🐳 Docker Support
 
