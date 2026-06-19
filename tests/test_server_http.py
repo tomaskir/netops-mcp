@@ -5,8 +5,20 @@ import json
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 from fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from netops_mcp.server_http import NetOpsMCPHTTPServer
+from netops_mcp.middleware.auth import AuthenticationMiddleware
 from netops_mcp.config.models import Config
+
+
+def _server_with_security(**security):
+    """Build a server whose security config has the given fields overridden."""
+    cfg = Config()
+    for key, value in security.items():
+        setattr(cfg.security, key, value)
+    with patch("netops_mcp.server_http.load_config", return_value=cfg):
+        return NetOpsMCPHTTPServer(config_path="cfg.json")
 
 
 class TestNetOpsMCPHTTPServer:
@@ -182,3 +194,66 @@ class TestNetOpsMCPHTTPServer:
                     port=8000,
                     path='/test'
                 )
+
+
+class TestSecurityMiddlewareWiring:
+    """Regression coverage for the middleware security fixes."""
+
+    def test_fail_closed_when_auth_required_without_keys(self):
+        """require_auth=true with no keys must abort, not serve unauthenticated."""
+        server = _server_with_security(require_auth=True, api_keys=[])
+        with pytest.raises(RuntimeError, match="no API keys"):
+            server._add_middleware(Starlette())
+
+    def test_auth_middleware_added_when_keys_present(self):
+        server = _server_with_security(require_auth=True, api_keys=["a-key"])
+        app = Starlette()
+        server._add_middleware(app)
+        assert AuthenticationMiddleware in [m.cls for m in app.user_middleware]
+
+    def test_cors_wildcard_disables_credentials(self):
+        """A '*' origin must force allow_credentials=False (browser footgun)."""
+        server = _server_with_security(enable_cors=True, cors_origins=["*"])
+        app = Starlette()
+        server._add_middleware(app)
+        cors = next(m for m in app.user_middleware if m.cls is CORSMiddleware)
+        assert cors.kwargs["allow_credentials"] is False
+
+    def test_cors_explicit_origin_allows_credentials(self):
+        server = _server_with_security(
+            enable_cors=True, cors_origins=["https://app.example.com"]
+        )
+        app = Starlette()
+        server._add_middleware(app)
+        cors = next(m for m in app.user_middleware if m.cls is CORSMiddleware)
+        assert cors.kwargs["allow_credentials"] is True
+        assert cors.kwargs["allow_origins"] == ["https://app.example.com"]
+
+
+class TestRunServesConfiguredApp:
+    """The app that carries middleware + routes is the one actually served."""
+
+    @patch("netops_mcp.server_http.signal.signal")
+    def test_run_serves_the_app_with_middleware_attached(self, _mock_signal):
+        server = NetOpsMCPHTTPServer()
+        sentinel = Starlette()
+        with patch.object(server.mcp, "http_app", return_value=sentinel) as mock_http_app, \
+             patch("uvicorn.run") as mock_run:
+            server.run()
+
+        mock_http_app.assert_called_once_with(path=server.path)
+        mock_run.assert_called_once()
+        served_app = mock_run.call_args.args[0]
+        assert served_app is sentinel
+        # Middleware was attached to the very instance uvicorn serves.
+        assert len(sentinel.user_middleware) > 0
+
+    @patch("netops_mcp.server_http.signal.signal")
+    def test_run_fails_closed_does_not_serve(self, _mock_signal):
+        server = _server_with_security(require_auth=True, api_keys=[])
+        sentinel = Starlette()
+        with patch.object(server.mcp, "http_app", return_value=sentinel), \
+             patch("uvicorn.run") as mock_run:
+            with pytest.raises(SystemExit):
+                server.run()
+        mock_run.assert_not_called()
