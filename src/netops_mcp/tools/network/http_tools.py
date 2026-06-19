@@ -3,7 +3,9 @@ HTTP/API testing tools for NetOps MCP.
 """
 
 import json
+import os
 import re
+import tempfile
 from typing import Dict, List, Optional, Any
 from mcp.types import TextContent as Content
 from ..base import NetOpsTool
@@ -50,13 +52,14 @@ class HTTPTools(NetOpsTool):
         valid_methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS']
         return method.upper() in valid_methods
 
-    def _format_curl_command(self, url: str, method: str = "GET", 
+    def _format_curl_command(self, url: str, output_file: str, method: str = "GET",
                            headers: Optional[Dict[str, str]] = None,
                            data: Optional[str] = None, timeout: int = 30) -> List[str]:
         """Format curl command with parameters.
 
         Args:
             url: Target URL
+            output_file: Path where curl writes the response body
             method: HTTP method
             headers: Optional HTTP headers
             data: Optional request body
@@ -65,7 +68,7 @@ class HTTPTools(NetOpsTool):
         Returns:
             List of command arguments
         """
-        command = ['curl', '-s', '-w', '@-', '-o', '/tmp/curl_output', '-X', method, url]
+        command = ['curl', '-s', '-w', '@-', '-o', output_file, '-X', method, url]
         
         # Add headers
         if headers:
@@ -146,22 +149,36 @@ class HTTPTools(NetOpsTool):
             if not self._validate_method(method):
                 raise ValueError("Invalid HTTP method provided")
 
-            command = self._format_curl_command(url, method, headers, data, timeout)
-            
-            # Execute curl with format
-            result = self._execute_command(command, timeout + 5)
-            
-            if result["success"]:
-                # Read output file
-                try:
-                    with open('/tmp/curl_output', 'r') as f:
-                        response_body = f.read()
-                except FileNotFoundError:
+            # Use a unique temp file per request so concurrent calls don't
+            # clobber each other's response bodies (and to avoid a predictable
+            # path in a shared /tmp).
+            fd, output_file = tempfile.mkstemp(prefix="netops-curl-")
+            os.close(fd)
+            try:
+                command = self._format_curl_command(url, output_file, method, headers, data, timeout)
+
+                # Execute curl with format
+                result = self._execute_command(command, timeout + 5)
+
+                if result["success"]:
+                    # Read output file
+                    try:
+                        with open(output_file, 'r') as f:
+                            response_body = f.read()
+                    except FileNotFoundError:
+                        response_body = ""
+                else:
                     response_body = ""
-                
+            finally:
+                try:
+                    os.unlink(output_file)
+                except OSError:
+                    pass
+
+            if result["success"]:
                 # Parse curl stats
                 stats = self._parse_curl_output(result["stdout"])
-                
+
                 response_data = {
                     "url": url,
                     "method": method,
@@ -244,27 +261,38 @@ class HTTPTools(NetOpsTool):
             if not self._validate_method(method):
                 raise ValueError("Invalid HTTP method provided")
 
-            # Use curl for API testing with proper output handling
-            command = ['curl', '-s', '-w', '%{http_code}', '-o', '/tmp/api_response', '-X', method, url]
-            
-            # Add headers
-            if headers:
-                for key, value in headers.items():
-                    command.extend(['-H', f'{key}: {value}'])
-            
-            # Add timeout
-            command.extend(['--max-time', str(timeout)])
-            
-            result = self._execute_command(command, timeout + 5)
-            
-            if result["success"]:
-                # Read response body
+            # Unique temp file per request to avoid concurrent clobbering and a
+            # predictable path in a shared /tmp.
+            fd, output_file = tempfile.mkstemp(prefix="netops-api-")
+            os.close(fd)
+            try:
+                # Use curl for API testing with proper output handling
+                command = ['curl', '-s', '-w', '%{http_code}', '-o', output_file, '-X', method, url]
+
+                # Add headers
+                if headers:
+                    for key, value in headers.items():
+                        command.extend(['-H', f'{key}: {value}'])
+
+                # Add timeout
+                command.extend(['--max-time', str(timeout)])
+
+                result = self._execute_command(command, timeout + 5)
+
+                if result["success"]:
+                    # Read response body
+                    try:
+                        with open(output_file, 'r') as f:
+                            response_body = f.read()
+                    except FileNotFoundError:
+                        response_body = ""
+            finally:
                 try:
-                    with open('/tmp/api_response', 'r') as f:
-                        response_body = f.read()
-                except FileNotFoundError:
-                    response_body = ""
-                
+                    os.unlink(output_file)
+                except OSError:
+                    pass
+
+            if result["success"]:
                 # Parse status code
                 try:
                     status_code = int(result["stdout"])
