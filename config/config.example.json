@@ -19,6 +19,15 @@
     "max_scan_timeout": 300,
     "allowed_ports": "1-65535"
   },
+  "tool_groups": {
+    "http": true,
+    "connectivity": true,
+    "dns": true,
+    "discovery": true,
+    "system_network": true,
+    "monitoring": true,
+    "security": true
+  },
   "server": {
     "host": "0.0.0.0",
     "port": 8815,

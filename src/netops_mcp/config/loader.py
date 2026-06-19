@@ -12,7 +12,7 @@ import json
 import os
 from typing import Any, Dict, Optional
 
-from .models import Config
+from .models import Config, ToolGroupsConfig
 
 try:
     from dotenv import load_dotenv
@@ -39,6 +39,7 @@ def _apply_env_overrides(data: Dict[str, Any]) -> Dict[str, Any]:
     logging_cfg = data.setdefault("logging", {})
     security_cfg = data.setdefault("security", {})
     network_cfg = data.setdefault("network", {})
+    tool_groups_cfg = data.setdefault("tool_groups", {})
 
     # Logging
     if "LOG_LEVEL" in os.environ:
@@ -67,6 +68,12 @@ def _apply_env_overrides(data: Dict[str, Any]) -> Dict[str, Any]:
         network_cfg["default_timeout"] = int(os.environ["DEFAULT_TIMEOUT"])
     if "MAX_SCAN_TIMEOUT" in os.environ:
         network_cfg["nmap_scan_timeout"] = int(os.environ["MAX_SCAN_TIMEOUT"])
+
+    # Tool groups (TOOL_GROUP_<NAME>=true/false, e.g. TOOL_GROUP_DISCOVERY=false)
+    for key in ToolGroupsConfig.model_fields:
+        env_name = f"TOOL_GROUP_{key.upper()}"
+        if env_name in os.environ:
+            tool_groups_cfg[key] = _parse_bool(os.environ[env_name])
 
     return data
 

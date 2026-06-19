@@ -202,3 +202,61 @@ class TestConfigModels:
         # This test is simplified since Pydantic handles validation
         config = Config()
         assert config is not None
+
+
+class TestToolGroupsConfig:
+    """Tool-group enable/disable settings."""
+
+    def test_all_groups_enabled_by_default(self):
+        config = Config()
+        assert config.tool_groups.http is True
+        assert config.tool_groups.discovery is True
+        assert config.tool_groups.security is True
+
+    def test_model_fields_match_registry(self):
+        """The model's fields must stay in sync with the canonical registry."""
+        from netops_mcp.config.models import ToolGroupsConfig
+        from netops_mcp.tools.groups import TOOL_GROUPS
+
+        assert set(ToolGroupsConfig.model_fields) == set(TOOL_GROUPS)
+
+    def test_is_enabled_helper(self):
+        config = Config(tool_groups={"discovery": False})
+        assert config.tool_groups.is_enabled("discovery") is False
+        assert config.tool_groups.is_enabled("http") is True
+        # Unknown keys default to enabled.
+        assert config.tool_groups.is_enabled("nonexistent") is True
+
+    def test_json_config_disables_group(self):
+        config_data = {"tool_groups": {"security": False, "discovery": False}}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            f.close()
+            try:
+                config = load_config(f.name)
+            finally:
+                os.unlink(f.name)
+
+        assert config.tool_groups.security is False
+        assert config.tool_groups.discovery is False
+        assert config.tool_groups.http is True
+
+    def test_env_var_disables_group(self, monkeypatch):
+        monkeypatch.setenv("TOOL_GROUP_DISCOVERY", "false")
+        config = load_config(None)
+        assert config.tool_groups.discovery is False
+        assert config.tool_groups.http is True
+
+    def test_env_var_overrides_json(self, monkeypatch):
+        """Env wins over the JSON file (documented precedence)."""
+        config_data = {"tool_groups": {"discovery": True}}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            json.dump(config_data, f)
+            f.close()
+            monkeypatch.setenv("TOOL_GROUP_DISCOVERY", "false")
+            try:
+                config = load_config(f.name)
+            finally:
+                os.unlink(f.name)
+
+        assert config.tool_groups.discovery is False

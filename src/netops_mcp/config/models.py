@@ -40,9 +40,32 @@ class NetworkConfig(BaseModel):
     nmap_scan_timeout: int = 300
 
 
+class ToolGroupsConfig(BaseModel):
+    """Enable/disable groups of MCP tools.
+
+    Every group is enabled by default (backward compatible). Set a field to
+    false to stop registering that group's tools entirely. The field names must
+    match the toggleable keys in ``netops_mcp.tools.groups.TOOL_GROUPS`` (a test
+    enforces this). The always-on diagnostic tools (health,
+    check_required_tools) are intentionally not represented here.
+    """
+    http: bool = True
+    connectivity: bool = True
+    dns: bool = True
+    discovery: bool = True
+    system_network: bool = True
+    monitoring: bool = True
+    security: bool = True
+
+    def is_enabled(self, group_key: str) -> bool:
+        """Whether the named tool group is enabled (unknown keys -> enabled)."""
+        return bool(getattr(self, group_key, True))
+
+
 class Config(BaseModel):
     """Root configuration model."""
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
+    tool_groups: ToolGroupsConfig = Field(default_factory=ToolGroupsConfig)
     custom_settings: Dict[str, Any] = Field(default_factory=dict)
