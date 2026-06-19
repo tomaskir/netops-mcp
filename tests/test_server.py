@@ -7,6 +7,8 @@ import tempfile
 import os
 from unittest.mock import patch, MagicMock
 from netops_mcp.server import NetOpsMCPServer
+from netops_mcp.config.models import Config
+from netops_mcp.tools.groups import enabled_tool_names
 
 
 class TestNetOpsMCPServer:
@@ -158,7 +160,7 @@ class TestNetOpsMCPServer:
     def test_tool_registration(self):
         """Test that tools are registered with MCP."""
         server = NetOpsMCPServer(self.temp_config.name)
-        
+
         # Check that tools are registered (this would require access to mcp instance)
         # For now, just verify tools are initialized
         assert server.http_tools is not None
@@ -168,3 +170,32 @@ class TestNetOpsMCPServer:
         assert server.network_tools is not None
         assert server.monitoring_tools is not None
         assert server.scanning_tools is not None
+
+
+class TestToolGroupFiltering:
+    """Disabled tool groups must not be registered with MCP."""
+
+    @staticmethod
+    def _registered(server):
+        return set(server.mcp._tool_manager._tools.keys())
+
+    def test_all_groups_registered_by_default(self):
+        server = NetOpsMCPServer()
+        names = self._registered(server)
+        assert len(names) == 26
+        assert {"curl_request", "nmap_scan", "port_scan", "health"} <= names
+
+    def test_disabled_groups_are_unregistered(self):
+        cfg = Config()
+        cfg.tool_groups.discovery = False
+        cfg.tool_groups.security = False
+        with patch("netops_mcp.server.load_config", return_value=cfg):
+            server = NetOpsMCPServer("ignored.json")
+
+        names = self._registered(server)
+        # discovery + security gone...
+        assert {"nmap_scan", "service_discovery", "port_scan", "service_enumeration"}.isdisjoint(names)
+        # ...everything else (incl. always-on meta) stays.
+        assert {"curl_request", "ping_host", "check_required_tools", "health"} <= names
+        # Registration matches what health()/the inventory would report.
+        assert names == set(enabled_tool_names(cfg.tool_groups.is_enabled))

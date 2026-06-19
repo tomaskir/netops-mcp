@@ -230,6 +230,38 @@ class TestSecurityMiddlewareWiring:
         assert cors.kwargs["allow_origins"] == ["https://app.example.com"]
 
 
+class TestHTTPToolGroupFiltering:
+    """Disabled groups are unregistered and the health inventory stays in sync."""
+
+    @staticmethod
+    def _registered(server):
+        import asyncio
+        res = server.mcp.list_tools()
+        if asyncio.iscoroutine(res):
+            res = asyncio.run(res)
+        return {t.name for t in res}
+
+    def test_all_groups_registered_by_default(self):
+        names = self._registered(NetOpsMCPHTTPServer())
+        assert {"curl_request", "nmap_scan", "port_scan", "health"} <= names
+
+    def test_disabled_group_unregistered_and_health_consistent(self):
+        from netops_mcp.tools.groups import enabled_tool_names
+
+        cfg = Config()
+        cfg.tool_groups.discovery = False
+        with patch("netops_mcp.server_http.load_config", return_value=cfg):
+            server = NetOpsMCPHTTPServer(config_path="cfg.json")
+
+        names = self._registered(server)
+        assert "nmap_scan" not in names
+        assert "service_discovery" not in names
+        assert {"curl_request", "check_required_tools", "health"} <= names
+        # The health() tool builds its inventory from the same function, so the
+        # registered set and the reported set cannot drift.
+        assert names == set(enabled_tool_names(cfg.tool_groups.is_enabled))
+
+
 class TestRunServesConfiguredApp:
     """The app that carries middleware + routes is the one actually served."""
 

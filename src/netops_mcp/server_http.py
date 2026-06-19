@@ -33,6 +33,7 @@ from .tools.system.network_tools import NetworkTools
 from .tools.system.monitoring_tools import MonitoringTools
 from .tools.security.scanning_tools import ScanningTools
 from .utils.system_check import check_required_tools as _check_required_tools, get_system_info
+from .tools.groups import TOOL_GROUPS, enabled_tool_names
 from .middleware.auth import AuthenticationMiddleware
 from .middleware.rate_limiter import RateLimitMiddleware
 from .middleware.metrics import MetricsMiddleware, create_metrics_endpoint
@@ -221,26 +222,9 @@ class NetOpsMCPHTTPServer:
 
         @self.mcp.tool(description="Health check endpoint")
         def health():
-            # Count MCP tools (26 total)
-            mcp_tools = [
-                # HTTP/API Testing Tools (3)
-                "curl_request", "httpie_request", "api_test",
-                # Network Connectivity Tools (5)
-                "ping_host", "traceroute_path", "mtr_monitor", "telnet_connect", "netcat_test",
-                # DNS Tools (3)
-                "nslookup_query", "dig_query", "host_lookup",
-                # Network Discovery Tools (2)
-                "nmap_scan", "service_discovery",
-                # System Network Tools (4)
-                "ss_connections", "netstat_connections", "arp_table", "arping_host",
-                # System Monitoring Tools (5)
-                "system_status", "cpu_usage", "memory_usage", "disk_usage", "process_list",
-                # Security Tools (2)
-                "port_scan", "service_enumeration",
-                # System Tools (2)
-                "check_required_tools", "health"
-            ]
-            
+            # MCP tools actually registered, derived from the enabled groups.
+            mcp_tools = enabled_tool_names(self.config.tool_groups.is_enabled)
+
             # Count system tools
             system_tools = _check_required_tools()
             available_system_tools = len(system_tools['available_tools'])
@@ -255,6 +239,31 @@ class NetOpsMCPHTTPServer:
                 "total_tools": len(mcp_tools) + total_system_tools
             })}]
 
+        # Drop any tool groups disabled in configuration.
+        self._apply_tool_group_filter()
+
+    def _remove_tool(self, name: str) -> None:
+        """Unregister a tool, tolerating differences between FastMCP variants."""
+        try:
+            provider = getattr(self.mcp, "local_provider", None)
+            if provider is not None and hasattr(provider, "remove_tool"):
+                provider.remove_tool(name)
+            else:
+                self.mcp.remove_tool(name)
+        except Exception:
+            pass
+
+    def _apply_tool_group_filter(self) -> None:
+        """Unregister the tools of every tool group disabled in configuration."""
+        for key, group in TOOL_GROUPS.items():
+            if self.config.tool_groups.is_enabled(key):
+                continue
+            for tool_name in group["tools"]:
+                self._remove_tool(tool_name)
+            self.logger.info(
+                f"Tool group '{key}' disabled; removed {len(group['tools'])} tools"
+            )
+
     def _setup_health_check(self):
         """Setup health check endpoint for Docker."""
         # FastMCP doesn't expose app directly, so we'll use a different approach
@@ -267,26 +276,9 @@ class NetOpsMCPHTTPServer:
         # Create a simple health check function
         def update_health_status():
             try:
-                # Count MCP tools (26 total)
-                mcp_tools = [
-                    # HTTP/API Testing Tools (3)
-                    "curl_request", "httpie_request", "api_test",
-                    # Network Connectivity Tools (5)
-                    "ping_host", "traceroute_path", "mtr_monitor", "telnet_connect", "netcat_test",
-                    # DNS Tools (3)
-                    "nslookup_query", "dig_query", "host_lookup",
-                    # Network Discovery Tools (2)
-                    "nmap_scan", "service_discovery",
-                    # System Network Tools (4)
-                    "ss_connections", "netstat_connections", "arp_table", "arping_host",
-                    # System Monitoring Tools (5)
-                    "system_status", "cpu_usage", "memory_usage", "disk_usage", "process_list",
-                    # Security Tools (2)
-                    "port_scan", "service_enumeration",
-                    # System Tools (2)
-                    "check_required_tools", "health"
-                ]
-                
+                # MCP tools actually registered, derived from the enabled groups.
+                mcp_tools = enabled_tool_names(self.config.tool_groups.is_enabled)
+
                 # Count system tools
                 system_tools = _check_required_tools()
                 available_system_tools = len(system_tools['available_tools'])

@@ -36,6 +36,7 @@ from .tools.system.network_tools import NetworkTools
 from .tools.system.monitoring_tools import MonitoringTools
 from .tools.security.scanning_tools import ScanningTools
 from .utils.system_check import check_required_tools as check_tools_status, get_system_info
+from .tools.groups import TOOL_GROUPS
 
 
 class NetOpsMCPServer:
@@ -298,6 +299,31 @@ class NetOpsMCPServer:
                 "tests_passed": self._tests_passed,
                 "details": "Startup tests passed" if self._tests_passed else ("Startup tests failed" if self._tests_passed is False else "No tests executed")
             }))]
+
+        # Drop any tool groups disabled in configuration.
+        self._apply_tool_group_filter()
+
+    def _remove_tool(self, name: str) -> None:
+        """Unregister a tool, tolerating differences between FastMCP variants."""
+        try:
+            provider = getattr(self.mcp, "local_provider", None)
+            if provider is not None and hasattr(provider, "remove_tool"):
+                provider.remove_tool(name)
+            else:
+                self.mcp.remove_tool(name)
+        except Exception:
+            pass
+
+    def _apply_tool_group_filter(self) -> None:
+        """Unregister the tools of every tool group disabled in configuration."""
+        for key, group in TOOL_GROUPS.items():
+            if self.config.tool_groups.is_enabled(key):
+                continue
+            for tool_name in group["tools"]:
+                self._remove_tool(tool_name)
+            self.logger.info(
+                f"Tool group '{key}' disabled; removed {len(group['tools'])} tools"
+            )
 
     def start(self) -> None:
         """Start the MCP server."""
