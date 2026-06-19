@@ -170,6 +170,7 @@ def get_system_info() -> Dict[str, Any]:
     
     info = {
         'platform': platform.system(),
+        'platform_version': platform.release(),
         'python_version': platform.python_version(),
         'architecture': platform.machine(),
         'hostname': platform.node(),
