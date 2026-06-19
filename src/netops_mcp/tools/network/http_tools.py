@@ -11,8 +11,30 @@ from mcp.types import TextContent as Content
 from ..base import NetOpsTool
 
 
+# RFC 7230 token characters — the only bytes allowed in an HTTP header field
+# name. The set deliberately excludes '@' (so a header can never be turned into
+# curl's "-H @filename" read-from-file form) and ':'/'=' (so a header can't be
+# smuggled in as an httpie request item).
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
 class HTTPTools(NetOpsTool):
     """Tools for HTTP/API testing and diagnostics."""
+
+    def _validate_header(self, key: str, value: str) -> None:
+        """Reject header items that curl/httpie could reinterpret unsafely.
+
+        A field name outside the RFC 7230 token set (e.g. one starting with
+        '@') could make curl read headers from a local file, and CR/LF/NUL in a
+        value enables request header injection.
+
+        Raises:
+            ValueError: If the header name or value is unsafe.
+        """
+        if not isinstance(key, str) or not _HEADER_NAME_RE.match(key):
+            raise ValueError(f"Invalid header name: {key!r}")
+        if not isinstance(value, str) or re.search(r"[\r\n\x00]", value):
+            raise ValueError(f"Invalid header value for {key!r}")
 
     def _validate_url(self, url: str) -> bool:
         """Validate URL format.
@@ -68,20 +90,26 @@ class HTTPTools(NetOpsTool):
         Returns:
             List of command arguments
         """
-        command = ['curl', '-s', '-w', '@-', '-o', output_file, '-X', method, url]
-        
+        # -g disables curl's URL globbing so '[', ']', '{', '}' in the URL are
+        # sent literally instead of expanding into extra requests.
+        command = ['curl', '-g', '-s', '-w', '@-', '-o', output_file, '-X', method, url]
+
         # Add headers
         if headers:
             for key, value in headers.items():
+                self._validate_header(key, value)
                 command.extend(['-H', f'{key}: {value}'])
-        
+
         # Add data
         if data:
-            command.extend(['-d', data])
-        
+            # --data-raw (not -d): a leading '@' is sent literally instead of
+            # being treated as "read this local file", which would otherwise let
+            # a caller exfiltrate arbitrary server-side files to the target URL.
+            command.extend(['--data-raw', data])
+
         # Add timeout
         command.extend(['--max-time', str(timeout)])
-        
+
         return command
 
     def _format_httpie_command(self, url: str, method: str = "GET",
@@ -100,18 +128,28 @@ class HTTPTools(NetOpsTool):
         Returns:
             List of command arguments
         """
-        command = ['http', method, url, '--timeout', str(timeout)]
-        
+        # --ignore-stdin stops httpie from blocking on / reading redirected
+        # stdin as the request body.
+        command = ['http', '--ignore-stdin', method, url, '--timeout', str(timeout)]
+
         # Add headers
         if headers:
             for key, value in headers.items():
-                command.extend([f'{key}:{value}'])
-        
+                self._validate_header(key, value)
+                command.append(f'{key}:{value}')
+
         # Add data
         if data:
             for key, value in data.items():
-                command.extend([f'{key}={value}'])
-        
+                # httpie treats 'name@file' and 'name=@file' request items as
+                # read-from-file. Restricting the field name to a token and
+                # forbidding '@' in the value blocks local-file disclosure.
+                if not isinstance(key, str) or not _HEADER_NAME_RE.match(key):
+                    raise ValueError(f"Invalid data field name: {key!r}")
+                if '@' in str(value):
+                    raise ValueError(f"Invalid data value for {key!r}: '@' not allowed")
+                command.append(f'{key}={value}')
+
         return command
 
     def _parse_curl_output(self, output: str) -> Dict[str, Any]:
@@ -267,11 +305,13 @@ class HTTPTools(NetOpsTool):
             os.close(fd)
             try:
                 # Use curl for API testing with proper output handling
-                command = ['curl', '-s', '-w', '%{http_code}', '-o', output_file, '-X', method, url]
+                # (-g disables URL globbing; see _format_curl_command).
+                command = ['curl', '-g', '-s', '-w', '%{http_code}', '-o', output_file, '-X', method, url]
 
                 # Add headers
                 if headers:
                     for key, value in headers.items():
+                        self._validate_header(key, value)
                         command.extend(['-H', f'{key}: {value}'])
 
                 # Add timeout

@@ -65,7 +65,37 @@ class TestHTTPTools:
         # Verify data was passed to command
         mock_execute_command.assert_called_once()
         call_args = mock_execute_command.call_args[0][0]
-        assert "-d" in call_args
+        assert "--data-raw" in call_args
+
+    def test_curl_request_data_at_prefix_sent_literally(self, mock_execute_command, sample_curl_output):
+        """A leading '@' in data must not be treated by curl as a file read."""
+        mock_execute_command.return_value = sample_curl_output
+
+        self.http_tools.curl_request(
+            "https://example.com", method="POST", data="@/etc/passwd"
+        )
+
+        call_args = mock_execute_command.call_args[0][0]
+        # Sent via --data-raw (literal), never the file-reading -d form.
+        assert "--data-raw" in call_args
+        assert "-d" not in call_args
+        assert "@/etc/passwd" in call_args
+
+    def test_curl_request_rejects_file_read_header(self):
+        """A header name starting with '@' (curl @file read) is rejected."""
+        result = self.http_tools.curl_request(
+            "https://example.com", headers={"@/etc/passwd": "x"}
+        )
+
+        assert "error" in result[0].text.lower()
+
+    def test_httpie_request_rejects_file_read_data(self):
+        """An '@' in httpie data (name=@file read) is rejected."""
+        result = self.http_tools.httpie_request(
+            "https://example.com", method="POST", data={"f": "@/etc/passwd"}
+        )
+
+        assert "error" in result[0].text.lower()
 
     def test_curl_request_with_timeout(self, mock_execute_command, sample_curl_output):
         """Test curl request with custom timeout."""
@@ -263,24 +293,21 @@ class TestHTTPTools:
     def test_format_curl_command(self):
         """Test curl command formatting."""
         url = "https://example.com"
+        output_file = "/tmp/netops-curl-test"
         method = "POST"
         headers = {"Content-Type": "application/json"}
-        data = {"key": "value"}
+        data = "key=value"
         timeout = 30
-        
-        command = self.http_tools._format_curl_command(url, method, headers, data, timeout)
-        
+
+        command = self.http_tools._format_curl_command(url, output_file, method, headers, data, timeout)
+
         assert "curl" in command
         assert url in command
-        # Check for method in command (format may vary)
-        # Check for method in command (format may vary)
         command_str = " ".join(str(item) for item in command)
         assert method in command_str
         assert "-H" in command
-        # Check for content type header (format may vary)
-        command_str = " ".join(str(item) for item in command)
         assert "Content-Type" in command_str
-        assert "-d" in command
+        assert "--data-raw" in command
         assert "--max-time" in command
         assert "30" in command
 
