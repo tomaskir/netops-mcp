@@ -327,67 +327,41 @@ class NetOpsMCPHTTPServer:
         health_thread = threading.Thread(target=health_check_loop, daemon=True)
         health_thread.start()
 
-    def _add_health_endpoint(self):
-        """Add custom health endpoint and middleware to FastMCP HTTP transport."""
-        try:
-            self.logger.info("Attempting to add custom health endpoint and middleware...")
-            self.logger.info(f"FastMCP object type: {type(self.mcp)}")
-            self.logger.info(f"FastMCP attributes: {dir(self.mcp)}")
-            
-            # FastMCP HTTP transport'ına custom endpoint ekle
-            if hasattr(self.mcp, 'http_app') and callable(self.mcp.http_app):
-                self.logger.info("FastMCP http_app method found, getting Starlette app...")
-                # Starlette app'i al
-                starlette_app = self.mcp.http_app()
-                self.logger.info(f"Starlette app type: {type(starlette_app)}")
-                
-                # Add middleware
-                self._add_middleware(starlette_app)
-                
-                # Starlette app'e health endpoint ekle
-                from starlette.responses import JSONResponse
-                
-                async def health_endpoint(request):
-                    try:
-                        # System tools kontrolü
-                        system_tools = _check_required_tools()
-                        available_tools = len(system_tools['available_tools'])
-                        total_tools = len(system_tools['available_tools']) + len(system_tools['missing_tools'])
-                        
-                        return JSONResponse({
-                            "status": "healthy",
-                            "server": "NetOpsMCP-HTTP",
-                            "mcp_tools": 26,  # Total MCP tools
-                            "system_tools_available": available_tools,
-                            "system_tools_total": total_tools,
-                            "total_tools": 26 + total_tools,
-                            "authentication": self.config.security.require_auth,
-                            "rate_limiting": True,
-                            "timestamp": time.time()
-                        })
-                    except Exception as e:
-                        return JSONResponse({
-                            "status": "unhealthy",
-                            "error": str(e),
-                            "timestamp": time.time()
-                        }, status_code=500)
-                
-                # Starlette app'e route ekle
-                starlette_app.add_route("/health", health_endpoint, methods=["GET"])
-                self.logger.info("Custom health endpoint added at /health")
-                
-                # Add metrics endpoint
-                metrics_endpoint_handler = create_metrics_endpoint()
-                starlette_app.add_route("/metrics", metrics_endpoint_handler, methods=["GET"])
-                self.logger.info("Metrics endpoint added at /metrics")
-            else:
-                self.logger.warning("FastMCP http_app method not available, using file-based health check")
-                self.logger.info(f"Available attributes: {[attr for attr in dir(self.mcp) if not attr.startswith('_')]}")
-                
-        except Exception as e:
-            self.logger.warning(f"Could not add custom health endpoint: {e}")
-            self.logger.info("Using file-based health check as fallback")
-    
+    def _add_custom_routes(self, app):
+        """Add /health and /metrics routes to the given Starlette app."""
+        from starlette.responses import JSONResponse
+
+        async def health_endpoint(request):
+            try:
+                system_tools = _check_required_tools()
+                available_tools = len(system_tools['available_tools'])
+                total_tools = len(system_tools['available_tools']) + len(system_tools['missing_tools'])
+
+                return JSONResponse({
+                    "status": "healthy",
+                    "server": "NetOpsMCP-HTTP",
+                    "mcp_tools": 26,  # Total MCP tools
+                    "system_tools_available": available_tools,
+                    "system_tools_total": total_tools,
+                    "total_tools": 26 + total_tools,
+                    "authentication": self.config.security.require_auth,
+                    "rate_limiting": True,
+                    "timestamp": time.time()
+                })
+            except Exception as e:
+                return JSONResponse({
+                    "status": "unhealthy",
+                    "error": str(e),
+                    "timestamp": time.time()
+                }, status_code=500)
+
+        app.add_route("/health", health_endpoint, methods=["GET"])
+        self.logger.info("Custom health endpoint added at /health")
+
+        metrics_endpoint_handler = create_metrics_endpoint()
+        app.add_route("/metrics", metrics_endpoint_handler, methods=["GET"])
+        self.logger.info("Metrics endpoint added at /metrics")
+
     def _add_middleware(self, app):
         """Add middleware to Starlette app."""
         try:
@@ -468,18 +442,19 @@ class NetOpsMCPHTTPServer:
         signal.signal(signal.SIGTERM, signal_handler)
 
         try:
+            import uvicorn
+
             self.logger.info(f"Starting NetOpsMCP HTTP server on {self.host}:{self.port}{self.path}")
-            
-            # Add custom health endpoint before starting server
-            self._add_health_endpoint()
-            
-            # Run with FastMCP's built-in HTTP transport
-            self.mcp.run(
-                transport="http",
-                host=self.host,
-                port=self.port,
-                path=self.path
-            )
+
+            # Build the Starlette app once and serve *that* instance. Previously
+            # middleware/routes were attached to a throwaway http_app() while
+            # mcp.run() built and served its own app, so auth, rate limiting,
+            # CORS and the /health and /metrics routes were silently discarded.
+            app = self.mcp.http_app(path=self.path)
+            self._add_middleware(app)
+            self._add_custom_routes(app)
+
+            uvicorn.run(app, host=self.host, port=self.port)
         except Exception as e:
             self.logger.error(f"HTTP server error: {e}")
             sys.exit(1)
