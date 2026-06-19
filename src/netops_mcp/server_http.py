@@ -208,13 +208,13 @@ class NetOpsMCPHTTPServer:
             try:
                 tools = _check_required_tools()
                 system_info = get_system_info()
-                
+
                 response_data = {
                     "tools": tools,
                     "system_info": system_info,
-                    "missing_tools": [tool for tool, available in tools.items() if not available]
+                    "missing_tools": tools["missing_tools"]
                 }
-                
+
                 return [{"type": "text", "text": json.dumps(response_data, indent=2)}]
             except Exception as e:
                 return [{"type": "text", "text": json.dumps({"error": str(e)}, indent=2)}]

@@ -57,6 +57,27 @@ class TestNetOpsMCPServer:
         server = NetOpsMCPServer(self.temp_config.name)
         assert server is not None
 
+    def test_system_requirements_reports_missing_tools(self, capsys):
+        """Missing tools are read from the structured result, not misparsed.
+
+        check_required_tools() returns {all_available, available_tools,
+        missing_tools}; an earlier bug iterated it as {name: bool} and reported
+        the dict keys themselves as missing.
+        """
+        structured = {
+            "all_available": False,
+            "available_tools": ["curl", "ping"],
+            "missing_tools": ["nmap"],
+        }
+        with patch("netops_mcp.server.check_tools_status", return_value=structured):
+            NetOpsMCPServer(self.temp_config.name)
+
+        logs = capsys.readouterr().out
+        assert "Missing tools: nmap" in logs
+        # The dict keys must never be treated as tool names.
+        assert "Missing tools: available_tools" not in logs
+        assert "Missing tools: missing_tools" not in logs
+
     @patch('netops_mcp.utils.system_check.check_required_tools')
     def test_system_requirements_check_failure(self, mock_check_tools):
         """Test system requirements check failure."""

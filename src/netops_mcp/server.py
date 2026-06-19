@@ -75,10 +75,11 @@ class NetOpsMCPServer:
         try:
             self.logger.info("Testing system requirements...")
             
-            # Check required tools
+            # Check required tools. check_tools_status() returns
+            # {all_available, available_tools, missing_tools}, not {name: bool}.
             tool_status = check_tools_status()
-            missing_tools = [tool for tool, available in tool_status.items() if not available]
-            
+            missing_tools = tool_status["missing_tools"]
+
             if missing_tools:
                 self.logger.warning(f"Missing tools: {', '.join(missing_tools)}")
             else:
@@ -280,13 +281,13 @@ class NetOpsMCPServer:
         def check_required_tools():
             tools = check_tools_status()
             system_info = get_system_info()
-            
+
             response_data = {
                 "tools": tools,
                 "system_info": system_info,
-                "missing_tools": [tool for tool, available in tools.items() if not available]
+                "missing_tools": tools["missing_tools"]
             }
-            
+
             return [Content(type="text", text=json.dumps(response_data, indent=2))]
 
         @self.mcp.tool(description="Health check endpoint")
@@ -353,11 +354,12 @@ def main():
         print(f"Memory: {system_info['memory_total']}")
         
         print("\nRequired tools:")
-        for tool, available in tools.items():
-            status = "✅" if available else "❌"
-            print(f"  {status} {tool}")
-        
-        missing = [tool for tool, available in tools.items() if not available]
+        for tool in tools["available_tools"]:
+            print(f"  ✅ {tool}")
+        for tool in tools["missing_tools"]:
+            print(f"  ❌ {tool}")
+
+        missing = tools["missing_tools"]
         if missing:
             print(f"\nMissing tools: {', '.join(missing)}")
             sys.exit(1)
