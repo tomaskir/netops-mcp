@@ -26,6 +26,9 @@ class ConnectivityTools(NetOpsTool):
             if not self._validate_host(host):
                 raise ValueError("Invalid host provided")
 
+            count = self._validate_count(count, "count")
+            timeout = self._validate_timeout(timeout, maximum=300)
+
             command = ['ping', '-c', str(count), '-W', str(timeout), host]
             result = self._execute_command(command, timeout + 5)
             
@@ -66,6 +69,9 @@ class ConnectivityTools(NetOpsTool):
             if not self._validate_host(target):
                 raise ValueError("Invalid target provided")
 
+            max_hops = self._validate_count(max_hops, "max_hops", maximum=64)
+            timeout = self._validate_timeout(timeout, maximum=300)
+
             command = ['traceroute', '-m', str(max_hops), '-w', str(timeout), target]
             result = self._execute_command(command, timeout + 10)
             
@@ -105,6 +111,9 @@ class ConnectivityTools(NetOpsTool):
         try:
             if not self._validate_host(target):
                 raise ValueError("Invalid target provided")
+
+            count = self._validate_count(count, "count")
+            timeout = self._validate_timeout(timeout, maximum=300)
 
             command = ['mtr', '-c', str(count), '-w', str(timeout), '--report', target]
             result = self._execute_command(command, timeout + 10)
@@ -148,6 +157,8 @@ class ConnectivityTools(NetOpsTool):
             if not self._validate_port(port):
                 raise ValueError("Invalid port provided")
 
+            timeout = self._validate_timeout(timeout, maximum=120)
+
             command = ['timeout', str(timeout), 'telnet', host, str(port)]
             result = self._execute_command(command, timeout + 5)
             
@@ -181,6 +192,8 @@ class ConnectivityTools(NetOpsTool):
                 raise ValueError("Invalid host provided")
             if not self._validate_port(port):
                 raise ValueError("Invalid port provided")
+
+            timeout = self._validate_timeout(timeout, maximum=120)
 
             command = ['nc', '-z', '-w', str(timeout), host, str(port)]
             result = self._execute_command(command, timeout + 5)

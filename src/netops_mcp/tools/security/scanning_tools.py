@@ -68,6 +68,8 @@ class ScanningTools(NetOpsTool):
             if not self._validate_ports(ports):
                 raise ValueError("Invalid ports specification provided")
 
+            timeout = self._validate_timeout(timeout)
+
             # Use nmap for port scanning
             command = ['nmap', '-sT', '-T4', '-p', ports, target]
             result = self._execute_command(command, timeout)

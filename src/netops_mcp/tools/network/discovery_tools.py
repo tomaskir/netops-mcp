@@ -45,6 +45,8 @@ class DiscoveryTools(NetOpsTool):
             if not self._validate_scan_type(scan_type):
                 raise ValueError("Invalid scan type provided")
 
+            timeout = self._validate_timeout(timeout)
+
             # Build nmap command based on scan type
             if scan_type == "basic":
                 command = ['nmap', '-sT', '-T4']

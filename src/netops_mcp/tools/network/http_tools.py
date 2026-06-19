@@ -187,6 +187,8 @@ class HTTPTools(NetOpsTool):
             if not self._validate_method(method):
                 raise ValueError("Invalid HTTP method provided")
 
+            timeout = self._validate_timeout(timeout, maximum=300)
+
             # Use a unique temp file per request so concurrent calls don't
             # clobber each other's response bodies (and to avoid a predictable
             # path in a shared /tmp).
@@ -260,6 +262,8 @@ class HTTPTools(NetOpsTool):
             if not self._validate_method(method):
                 raise ValueError("Invalid HTTP method provided")
 
+            timeout = self._validate_timeout(timeout, maximum=300)
+
             command = self._format_httpie_command(url, method, headers, data, timeout)
             
             result = self._execute_command(command, timeout + 5)
@@ -298,6 +302,8 @@ class HTTPTools(NetOpsTool):
             
             if not self._validate_method(method):
                 raise ValueError("Invalid HTTP method provided")
+
+            timeout = self._validate_timeout(timeout, maximum=300)
 
             # Unique temp file per request to avoid concurrent clobbering and a
             # predictable path in a shared /tmp.

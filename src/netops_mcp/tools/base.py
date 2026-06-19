@@ -13,6 +13,19 @@ import subprocess
 from typing import Any, Dict, List, Optional, Union
 from mcp.types import TextContent as Content
 
+from ..validators.input_validator import validate_timeout, ValidationError
+
+
+# Hard ceilings on user-supplied numeric parameters. The tools run
+# synchronously in the server's worker-thread pool, so an unbounded timeout (or
+# a huge probe count combined with one) lets a single request pin a worker and,
+# in aggregate, exhaust the pool — a cheap denial of service. These also bound
+# the values echoed into the spawned command.
+MAX_TIMEOUT = 600
+MAX_PROBE_COUNT = 100
+MAX_TRACEROUTE_HOPS = 64
+MAX_PROCESS_LIMIT = 1000
+
 
 class NetOpsTool:
     """Base class for NetOps MCP tools.
@@ -49,6 +62,37 @@ class NetOpsTool:
 
         return [Content(type="text", text=formatted)]
 
+    def _validate_timeout(self, timeout: Union[int, str], maximum: int = MAX_TIMEOUT) -> int:
+        """Validate and bound a user-supplied timeout (seconds).
+
+        Raises:
+            ValueError: If the timeout is not an integer in [1, maximum].
+        """
+        try:
+            return validate_timeout(int(timeout), max_timeout=maximum)
+        except (ValidationError, ValueError, TypeError) as e:
+            raise ValueError(f"Invalid timeout: {e}")
+
+    def _validate_count(
+        self,
+        value: Union[int, str],
+        name: str = "count",
+        maximum: int = MAX_PROBE_COUNT,
+        minimum: int = 1,
+    ) -> int:
+        """Validate and bound a positive-integer parameter (count, hops, ...).
+
+        Raises:
+            ValueError: If the value is not an integer in [minimum, maximum].
+        """
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid {name}: must be an integer")
+        if n < minimum or n > maximum:
+            raise ValueError(f"{name} must be between {minimum} and {maximum}")
+        return n
+
     def _execute_command(self, command: List[str], timeout: int = 30) -> Dict[str, Any]:
         """Execute a system command safely.
 
@@ -59,9 +103,16 @@ class NetOpsTool:
         Returns:
             Dictionary containing command results
         """
+        # Backstop: never let a command run longer than MAX_TIMEOUT regardless
+        # of caller, so a worker thread can't be held indefinitely.
+        try:
+            timeout = max(1, min(int(timeout), MAX_TIMEOUT))
+        except (TypeError, ValueError):
+            timeout = 30
+
         try:
             self.logger.debug(f"Executing command: {' '.join(command)}")
-            
+
             result = subprocess.run(
                 command,
                 capture_output=True,

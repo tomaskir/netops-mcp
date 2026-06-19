@@ -130,6 +130,8 @@ class NetworkTools(NetOpsTool):
             if not self._validate_host(host):
                 raise ValueError("Invalid host provided")
 
+            count = self._validate_count(count, "count")
+
             command = ['arping', '-c', str(count), host]
             result = self._execute_command(command, 30)
             

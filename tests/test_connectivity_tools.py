@@ -52,12 +52,26 @@ class TestConnectivityTools:
         assert "-c" in call_args
         assert "10" in call_args
 
+    def test_ping_host_rejects_excessive_timeout(self, mock_execute_command):
+        """An out-of-range timeout is rejected before any command runs."""
+        result = self.connectivity_tools.ping_host("google.com", timeout=99999)
+
+        assert "error" in result[0].text.lower()
+        mock_execute_command.assert_not_called()
+
+    def test_ping_host_rejects_excessive_count(self, mock_execute_command):
+        """An out-of-range probe count is rejected before any command runs."""
+        result = self.connectivity_tools.ping_host("google.com", count=10_000_000)
+
+        assert "error" in result[0].text.lower()
+        mock_execute_command.assert_not_called()
+
     def test_ping_host_with_timeout(self, mock_execute_command, sample_ping_output):
         """Test ping with custom timeout."""
         mock_execute_command.return_value = sample_ping_output
-        
+
         result = self.connectivity_tools.ping_host("google.com", timeout=30)
-        
+
         assert len(result) == 1
         assert result[0].type == "text"
         # Verify timeout was passed to command
