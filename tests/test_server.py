@@ -78,16 +78,22 @@ class TestNetOpsMCPServer:
         assert "Missing tools: available_tools" not in logs
         assert "Missing tools: missing_tools" not in logs
 
-    @patch('netops_mcp.utils.system_check.check_required_tools')
-    def test_system_requirements_check_failure(self, mock_check_tools):
-        """Test system requirements check failure."""
-        mock_check_tools.return_value = False
-        
-        server = NetOpsMCPServer(self.temp_config.name)
-        
-        # Should still initialize but log warning
-        assert server is not None
+    def test_system_requirements_check_failure(self, capsys):
+        """A failing tool check is logged and degrades gracefully.
+
+        server.py imports check_required_tools as `check_tools_status`, so the
+        patch must target that bound name (patching the source module would not
+        intercept the already-imported reference). The check raising must not
+        crash startup.
+        """
+        with patch(
+            "netops_mcp.server.check_tools_status",
+            side_effect=RuntimeError("boom"),
+        ):
+            server = NetOpsMCPServer(self.temp_config.name)
+
         assert isinstance(server, NetOpsMCPServer)
+        assert "System requirements test failed" in capsys.readouterr().out
 
     def test_tools_initialization(self):
         """Test that all tools are properly initialized."""
