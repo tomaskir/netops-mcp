@@ -34,11 +34,11 @@ from .core.logging import setup_logging
 from .middleware.auth import AuthenticationMiddleware
 from .middleware.metrics import MetricsMiddleware, create_metrics_endpoint
 from .middleware.rate_limiter import RateLimitMiddleware
+from .tools.groups import apply_group_filter
 from .tools.network.connectivity_tools import ConnectivityTools
 from .tools.network.discovery_tools import DiscoveryTools
 from .tools.network.dns_tools import DNSTools
 from .tools.network.http_tools import HTTPTools
-from .tools.groups import apply_group_filter
 from .tools.registry import register_tools
 from .tools.security.scanning_tools import ScanningTools
 from .tools.system.monitoring_tools import MonitoringTools

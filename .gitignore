@@ -194,3 +194,7 @@ get-shit-done/
 .codex/
 .cursor/
 .agents/
+
+# Local AI/tooling run scripts
+claude/
+.nc-claude-code/

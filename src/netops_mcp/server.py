@@ -28,11 +28,11 @@ except ImportError:  # pragma: no cover - SDK 2.0 dropped the bundled FastMCP
 
 from .config.loader import load_config
 from .core.logging import setup_logging
+from .tools.groups import apply_group_filter
 from .tools.network.connectivity_tools import ConnectivityTools
 from .tools.network.discovery_tools import DiscoveryTools
 from .tools.network.dns_tools import DNSTools
 from .tools.network.http_tools import HTTPTools
-from .tools.groups import apply_group_filter
 from .tools.registry import register_tools
 from .tools.security.scanning_tools import ScanningTools
 from .tools.system.monitoring_tools import MonitoringTools

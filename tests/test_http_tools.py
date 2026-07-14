@@ -674,9 +674,7 @@ class TestHTTPArgHardening:
 
     def test_curl_rejects_file_read_header_name(self):
         """A header name that could become curl's -H @file is rejected."""
-        result = self.http_tools.curl_request(
-            "https://example.com", headers={"@/etc/passwd": "x"}
-        )
+        result = self.http_tools.curl_request("https://example.com", headers={"@/etc/passwd": "x"})
         assert "error" in result[0].text.lower()
 
     def test_curl_rejects_crlf_in_header_value(self):

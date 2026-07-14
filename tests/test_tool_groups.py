@@ -9,7 +9,6 @@ import tempfile
 from types import SimpleNamespace
 
 import pytest
-
 from netops_mcp.config.loader import load_config
 from netops_mcp.config.models import ToolGroupsConfig
 from netops_mcp.tools.groups import (
@@ -20,6 +19,7 @@ from netops_mcp.tools.groups import (
     enabled_tool_names,
 )
 from netops_mcp.tools.registry import register_tools
+from pydantic import ValidationError
 
 
 class TestRegistry:
@@ -66,7 +66,7 @@ class TestToolGroupsConfig:
         assert cfg.is_enabled("http") is True
 
     def test_unknown_key_rejected(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ToolGroupsConfig(does_not_exist=False)
 
     def test_json_config_disables_group(self):

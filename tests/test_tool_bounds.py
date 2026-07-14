@@ -9,7 +9,6 @@ command runs.
 from unittest.mock import MagicMock
 
 import pytest
-
 from netops_mcp.tools.base import (
     MAX_PROBE_COUNT,
     MAX_PROCESS_LIMIT,
@@ -58,9 +57,7 @@ class TestValidateCount:
 
     def test_honors_custom_bounds(self):
         assert (
-            self.tool._validate_count(
-                MAX_TRACEROUTE_HOPS, "max_hops", maximum=MAX_TRACEROUTE_HOPS
-            )
+            self.tool._validate_count(MAX_TRACEROUTE_HOPS, "max_hops", maximum=MAX_TRACEROUTE_HOPS)
             == MAX_TRACEROUTE_HOPS
         )
         with pytest.raises(ValueError):

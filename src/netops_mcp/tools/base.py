@@ -79,7 +79,7 @@ class NetOpsTool:
         try:
             return validate_timeout(int(timeout), max_timeout=maximum)
         except (ValidationError, ValueError, TypeError) as e:
-            raise ValueError(f"Invalid timeout: {e}")
+            raise ValueError(f"Invalid timeout: {e}") from e
 
     def _validate_count(
         self,
@@ -95,8 +95,8 @@ class NetOpsTool:
         """
         try:
             n = int(value)
-        except (TypeError, ValueError):
-            raise ValueError(f"Invalid {name}: must be an integer")
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Invalid {name}: must be an integer") from e
         if n < minimum or n > maximum:
             raise ValueError(f"{name} must be between {minimum} and {maximum}")
         return n
