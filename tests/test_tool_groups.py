@@ -120,3 +120,17 @@ class TestApplyGroupFilter:
         assert "health" in registered
         assert "check_required_tools" in registered
         assert count == 24
+
+    @pytest.mark.parametrize("label,factory", _factories())
+    def test_group_inventory_matches_registered_surface(self, label, factory):
+        """The grouping must stay in sync with what register_tools registers.
+
+        Guards against a future upstream pull adding/removing/renaming a tool
+        without updating TOOL_GROUPS: a new tool would otherwise be silently
+        ungrouped (always-on, never filterable), and a removed one would leave a
+        stale group entry that _remove_tool would no-op on.
+        """
+        registered, _ = _register(factory, lambda _k: True)
+        covered = {t for g in TOOL_GROUPS.values() for t in g["tools"]} | set(META_GROUP["tools"])
+        assert registered - covered == set(), f"registered but ungrouped: {registered - covered}"
+        assert covered - registered == set(), f"grouped but not registered: {covered - registered}"
