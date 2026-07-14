@@ -19,7 +19,12 @@ import signal
 import sys
 from typing import Optional
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:  # pragma: no cover - SDK 2.0 dropped the bundled FastMCP
+    # Fall back to the standalone fastmcp package (what server_http.py prefers)
+    # so the stdio server keeps importing if the mcp<2.0 pin is ever loosened.
+    from fastmcp import FastMCP
 
 from .config.loader import load_config
 from .core.logging import setup_logging
