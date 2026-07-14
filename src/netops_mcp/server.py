@@ -21,8 +21,11 @@ import sys
 import signal
 from typing import Optional, List, Annotated
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.tools import Tool
+try:
+    # Standalone fastmcp 2.x is the canonical source (matches server_http.py).
+    from fastmcp import FastMCP
+except ImportError:  # pragma: no cover - fall back to the SDK-bundled FastMCP (mcp 1.x)
+    from mcp.server.fastmcp import FastMCP
 from mcp.types import TextContent as Content
 from pydantic import Field
 
