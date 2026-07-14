@@ -50,6 +50,7 @@ class ScanningTools(NetOpsTool):
             List of Content objects with port scan results
         """
         try:
+            timeout = self._validate_timeout(timeout)
             # SEC-03 / CR-01: range-aware validate + SSRF-classify the scan
             # target. nmap CIDR/octet-range/wildcard syntax is expanded and every
             # covered address classified (loopback/link-local/metadata blocked by

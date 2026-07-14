@@ -8,7 +8,7 @@ from typing import List
 from mcp.types import TextContent as Content
 
 from ...formatting.output_parser import OutputParser
-from ..base import NetOpsTool
+from ..base import MAX_TRACEROUTE_HOPS, NetOpsTool
 
 
 class ConnectivityTools(NetOpsTool):
@@ -78,6 +78,10 @@ class ConnectivityTools(NetOpsTool):
             List of Content objects with traceroute results
         """
         try:
+            # Bound user-supplied parameters before any DNS/subprocess work so a
+            # single request can't flood hops or pin a worker thread.
+            max_hops = self._validate_count(max_hops, "max_hops", maximum=MAX_TRACEROUTE_HOPS)
+            timeout = self._validate_timeout(timeout)
             if not self._validate_host(target):
                 raise ValueError("Invalid target provided")
             # SEC-03: SSRF-classify the connection target (non-HTTP fail-open).

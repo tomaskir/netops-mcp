@@ -7,7 +7,7 @@ from typing import List
 import psutil
 from mcp.types import TextContent as Content
 
-from ..base import NetOpsTool
+from ..base import MAX_PROCESS_LIMIT, NetOpsTool
 
 
 class MonitoringTools(NetOpsTool):
@@ -175,6 +175,7 @@ class MonitoringTools(NetOpsTool):
             List of Content objects with process list
         """
         try:
+            limit = self._validate_count(limit, "limit", maximum=MAX_PROCESS_LIMIT)
             processes = []
             for proc in psutil.process_iter(
                 ["pid", "name", "cpu_percent", "memory_percent", "status"]

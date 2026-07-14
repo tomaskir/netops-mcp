@@ -69,6 +69,7 @@ class DiscoveryTools(NetOpsTool):
             List of Content objects with nmap results
         """
         try:
+            timeout = self._validate_timeout(timeout)
             # SEC-03 / CR-01: range-aware validate + SSRF-classify the scan
             # target. nmap range/CIDR/wildcard syntax (e.g. 169.254.169.250-254,
             # 127.0.0.0/8) is expanded and every covered address classified; an
