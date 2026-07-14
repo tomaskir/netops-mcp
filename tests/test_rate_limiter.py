@@ -127,3 +127,59 @@ class TestRateLimiter:
             "used": 2,
             "window_seconds": 60,
         }
+
+
+class TestBucketEviction:
+    """Memory must stay bounded as clients/IPs rotate (idle-bucket eviction).
+
+    Without eviction the ``requests`` map grows one entry per distinct client
+    forever, because per-client cleanup only runs when that client is seen
+    again — an unauthenticated caller rotating source IPs could exhaust memory.
+    """
+
+    def test_empty_bucket_is_dropped_by_cleanup(self):
+        """When a bucket's only request ages out, the key is removed, not left as []."""
+        clock = {"t": 1000.0}
+        rl = RateLimiter(requests_per_window=5, window_seconds=60, time_func=lambda: clock["t"])
+
+        asyncio.run(rl.is_allowed("ip:a"))
+        assert "ip:a" in rl.requests
+
+        clock["t"] += 61
+        rl._cleanup_old_requests("ip:a", clock["t"])
+        assert "ip:a" not in rl.requests
+
+    def test_rotating_clients_are_swept(self):
+        """A window-spanning sweep evicts stale buckets from rotated identifiers."""
+        clock = {"t": 1000.0}
+        rl = RateLimiter(requests_per_window=100, window_seconds=60, time_func=lambda: clock["t"])
+
+        # 50 one-shot clients within one window: first call sweeps the empty
+        # map, the rest just record -> 50 live buckets.
+        for i in range(50):
+            asyncio.run(rl.is_allowed(f"ip:{i}"))
+        assert len(rl.requests) == 50
+
+        # Advance past the window; a single new client triggers the periodic
+        # sweep, which evicts all 50 now-stale buckets.
+        clock["t"] += 61
+        asyncio.run(rl.is_allowed("ip:new"))
+        assert len(rl.requests) == 1
+        assert "ip:new" in rl.requests
+
+    def test_active_client_survives_sweep_that_evicts_idle(self):
+        """The sweep keeps clients with an in-window hit and drops only idle ones."""
+        clock = {"t": 1000.0}
+        rl = RateLimiter(requests_per_window=100, window_seconds=60, time_func=lambda: clock["t"])
+
+        asyncio.run(rl.is_allowed("ip:idle"))  # last seen at t=1000
+        clock["t"] += 30
+        asyncio.run(rl.is_allowed("ip:active"))  # last seen at t=1030
+
+        # t=1070: idle's 1000 is stale (cutoff 1010), active's 1030 is fresh,
+        # and >1 window since the last sweep so the sweep fires.
+        clock["t"] += 40
+        asyncio.run(rl.is_allowed("ip:active"))
+
+        assert "ip:idle" not in rl.requests
+        assert "ip:active" in rl.requests
