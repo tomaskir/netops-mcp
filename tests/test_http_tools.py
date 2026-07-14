@@ -79,10 +79,12 @@ class TestHTTPTools:
 
         assert len(result) == 1
         assert result[0].type == "text"
-        # Verify data was passed to command
+        # Verify data was passed to command via --data-raw (not -d, whose
+        # leading-'@' file-read footgun is why the tool uses --data-raw).
         mock_execute_command.assert_called_once()
         call_args = mock_execute_command.call_args[0][0]
-        assert "-d" in call_args
+        assert "--data-raw" in call_args
+        assert "-d" not in call_args
 
     def test_curl_request_with_timeout(self, mock_execute_command, sample_curl_output):
         """Test curl request with custom timeout."""
@@ -297,7 +299,7 @@ class TestHTTPTools:
         # Check for content type header (format may vary)
         command_str = " ".join(str(item) for item in command)
         assert "Content-Type" in command_str
-        assert "-d" in command
+        assert "--data-raw" in command  # hardened: not -d (leading-@ file read)
         assert "--max-time" in command
         assert "30" in command
 
@@ -641,3 +643,61 @@ class TestHTTPTools:
         assert self.http_tools._validate_url(None) is False
         assert self.http_tools._validate_url("not-a-url") is False
         assert self.http_tools._validate_url("ftp://example.com") is False
+
+
+class TestHTTPArgHardening:
+    """Local-file read/exfil hardening for curl/httpie argument construction.
+
+    curl's -d and -H treat a leading '@' as "read from this local file", and
+    httpie treats 'name@file' / 'name=@file' as file uploads. These tests pin
+    the defenses: --data-raw for bodies, RFC 7230 token header names, no '@' in
+    httpie data, and -g so URL globbing can't fan a request out.
+    """
+
+    def setup_method(self):
+        self.http_tools = HTTPTools()
+
+    def test_curl_globbing_disabled(self, mock_execute_command, sample_curl_output):
+        """curl is invoked with -g so '[' ']' '{' '}' in a URL aren't expanded."""
+        mock_execute_command.return_value = sample_curl_output
+        self.http_tools.curl_request("https://example.com")
+        assert "-g" in mock_execute_command.call_args[0][0]
+
+    def test_curl_data_at_prefix_sent_literally(self, mock_execute_command, sample_curl_output):
+        """A leading '@' in curl data must not be treated as a file read."""
+        mock_execute_command.return_value = sample_curl_output
+        self.http_tools.curl_request("https://example.com", method="POST", data="@/etc/passwd")
+        call_args = mock_execute_command.call_args[0][0]
+        assert "--data-raw" in call_args
+        assert "-d" not in call_args
+        assert "@/etc/passwd" in call_args  # literal body, not a filename
+
+    def test_curl_rejects_file_read_header_name(self):
+        """A header name that could become curl's -H @file is rejected."""
+        result = self.http_tools.curl_request(
+            "https://example.com", headers={"@/etc/passwd": "x"}
+        )
+        assert "error" in result[0].text.lower()
+
+    def test_curl_rejects_crlf_in_header_value(self):
+        """CR/LF in a header value (header injection) is rejected."""
+        result = self.http_tools.curl_request(
+            "https://example.com", headers={"X-Test": "a\r\nEvil: 1"}
+        )
+        assert "error" in result[0].text.lower()
+
+    def test_httpie_rejects_file_read_data(self):
+        """An '@' in httpie data (name=@file read) is rejected."""
+        result = self.http_tools.httpie_request(
+            "https://example.com", method="POST", data={"f": "@/etc/passwd"}
+        )
+        assert "error" in result[0].text.lower()
+
+    def test_validate_header_accepts_normal_and_rejects_bad(self):
+        """Unit-level: token names pass, '@'/':' names and CRLF values fail."""
+        self.http_tools._validate_header("Content-Type", "application/json")  # no raise
+        for bad_key in ("@/etc/passwd", "a:b", "a=b", "a b"):
+            with pytest.raises(ValueError):
+                self.http_tools._validate_header(bad_key, "x")
+        with pytest.raises(ValueError):
+            self.http_tools._validate_header("X-Test", "a\r\nb")

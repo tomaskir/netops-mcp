@@ -4,6 +4,7 @@ HTTP/API testing tools for NetOps MCP.
 
 import json
 import os
+import re
 import tempfile
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
@@ -12,9 +13,26 @@ from mcp.types import TextContent as Content
 
 from ..base import NetOpsTool
 
+# RFC 7230 header field-name token characters. Deliberately excludes '@' (so a
+# header name can never be turned into curl's "-H @filename" read-from-file
+# form) and ':'/'=' (so a header can't smuggle a second field or data item).
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
 
 class HTTPTools(NetOpsTool):
     """Tools for HTTP/API testing and diagnostics."""
+
+    def _validate_header(self, key: str, value: str) -> None:
+        """Reject header names/values that could read local files or split headers.
+
+        A non-token name (e.g. one containing '@') could make curl read headers
+        from a local file (``-H @/etc/passwd``); CR/LF/NUL in a value could
+        inject additional headers.
+        """
+        if not isinstance(key, str) or not _HEADER_NAME_RE.match(key):
+            raise ValueError(f"Invalid header name: {key!r}")
+        if not isinstance(value, str) or re.search(r"[\r\n\x00]", value):
+            raise ValueError(f"Invalid header value for {key!r}")
 
     def _validate_url(self, url: str) -> bool:
         """Validate URL FORMAT by delegating to the central validator (REF-02).
@@ -104,7 +122,9 @@ class HTTPTools(NetOpsTool):
         Returns:
             List of command arguments
         """
-        command = ["curl", "-s", "-w", "@-"]
+        # -g disables curl's URL globbing so '[', ']', '{', '}' in a URL are
+        # taken literally rather than expanded into a range/list of requests.
+        command = ["curl", "-g", "-s", "-w", "@-"]
 
         # Route the response body to a per-request private file (SEC-02).
         if out_path:
@@ -123,11 +143,14 @@ class HTTPTools(NetOpsTool):
         # Add headers
         if headers:
             for key, value in headers.items():
+                self._validate_header(key, value)
                 command.extend(["-H", f"{key}: {value}"])
 
-        # Add data
+        # Add data. --data-raw (not -d): curl's -d treats a leading '@' as
+        # "read the body from this local file", so -d @/etc/passwd would exfil
+        # a local file to the target. --data-raw sends the bytes literally.
         if data:
-            command.extend(["-d", data])
+            command.extend(["--data-raw", data])
 
         # Add timeout
         command.extend(["--max-time", str(timeout)])
@@ -159,11 +182,18 @@ class HTTPTools(NetOpsTool):
         # Add headers
         if headers:
             for key, value in headers.items():
+                self._validate_header(key, value)
                 command.extend([f"{key}:{value}"])
 
-        # Add data
+        # Add data. httpie treats 'name@file' / 'name=@file' request items as
+        # file uploads, so a token field name plus a '@'-free value blocks
+        # local-file disclosure.
         if data:
             for key, value in data.items():
+                if not isinstance(key, str) or not _HEADER_NAME_RE.match(key):
+                    raise ValueError(f"Invalid data field name: {key!r}")
+                if "@" in str(value):
+                    raise ValueError(f"Invalid data value for {key!r}: '@' not allowed")
                 command.extend([f"{key}={value}"])
 
         return command
@@ -357,6 +387,7 @@ class HTTPTools(NetOpsTool):
                 # --resolve pins the classified IP against DNS-rebind (SEC-03).
                 command = [
                     "curl",
+                    "-g",
                     "-s",
                     "-w",
                     "%{http_code}",
@@ -373,6 +404,7 @@ class HTTPTools(NetOpsTool):
                 # Add headers
                 if headers:
                     for key, value in headers.items():
+                        self._validate_header(key, value)
                         command.extend(["-H", f"{key}: {value}"])
 
                 # Add timeout
