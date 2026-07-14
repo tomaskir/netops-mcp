@@ -141,6 +141,31 @@ class ServerConfig(BaseModel):
     path: str = "/netops-mcp"
 
 
+class ToolGroupsConfig(BaseModel):
+    """Enable/disable whole groups of MCP tools.
+
+    Each field maps to a key in ``tools/groups.TOOL_GROUPS`` (a test enforces
+    the field set matches). A disabled group's tools are unregistered after
+    startup, so they neither appear in tool listings nor accept calls. The
+    always-on meta tools (check_required_tools/health) are not represented here
+    and can never be disabled.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    http: bool = True
+    connectivity: bool = True
+    dns: bool = True
+    discovery: bool = True
+    system_network: bool = True
+    monitoring: bool = True
+    security: bool = True
+
+    def is_enabled(self, key: str) -> bool:
+        """Whether the group ``key`` is enabled (unknown keys default to True)."""
+        return bool(getattr(self, key, True))
+
+
 class Config(BaseModel):
     """Root configuration model."""
 
@@ -150,4 +175,5 @@ class Config(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    tool_groups: ToolGroupsConfig = Field(default_factory=ToolGroupsConfig)
     custom_settings: Dict[str, Any] = Field(default_factory=dict)

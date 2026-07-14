@@ -32,6 +32,7 @@ from .tools.network.connectivity_tools import ConnectivityTools
 from .tools.network.discovery_tools import DiscoveryTools
 from .tools.network.dns_tools import DNSTools
 from .tools.network.http_tools import HTTPTools
+from .tools.groups import apply_group_filter
 from .tools.registry import register_tools
 from .tools.security.scanning_tools import ScanningTools
 from .tools.system.monitoring_tools import MonitoringTools
@@ -73,6 +74,11 @@ class NetOpsMCPServer:
         # Register the shared 26-tool surface (REF-04). tool_count is derived
         # dynamically from the FastMCP instance (REF-05), not hardcoded.
         self.tool_count = register_tools(self.mcp, self)
+        # Drop any tool groups disabled in configuration; keep tool_count in
+        # sync with what remains registered.
+        filtered = apply_group_filter(self.mcp, self.config.tool_groups.is_enabled, self.logger)
+        if filtered is not None:
+            self.tool_count = filtered
 
     def _test_system_requirements(self) -> None:
         """Test system requirements and required tools."""

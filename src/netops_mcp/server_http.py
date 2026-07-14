@@ -38,6 +38,7 @@ from .tools.network.connectivity_tools import ConnectivityTools
 from .tools.network.discovery_tools import DiscoveryTools
 from .tools.network.dns_tools import DNSTools
 from .tools.network.http_tools import HTTPTools
+from .tools.groups import apply_group_filter
 from .tools.registry import register_tools
 from .tools.security.scanning_tools import ScanningTools
 from .tools.system.monitoring_tools import MonitoringTools
@@ -101,6 +102,11 @@ class NetOpsMCPHTTPServer:
         # dynamically from the FastMCP instance (REF-05), replacing the former
         # hardcoded 26 in the tool-registration path.
         self.tool_count = register_tools(self.mcp, self)
+        # Drop any tool groups disabled in configuration; keep tool_count (which
+        # the /health route reports) in sync with what remains registered.
+        filtered = apply_group_filter(self.mcp, self.config.tool_groups.is_enabled, self.logger)
+        if filtered is not None:
+            self.tool_count = filtered
 
         # PERF-03: cache system-tool availability ONCE at startup instead of
         # forking ~15 subprocess probes every 30s from a background thread. The

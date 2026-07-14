@@ -158,6 +158,30 @@ Most-used config keys (the full model-derived table is regenerable with
 | `network.max_scan_timeout` | `300` | Upper bound for scan timeouts (seconds) |
 | `server.host` / `port` / `path` | `0.0.0.0` / `8815` / `/netops-mcp` | HTTP bind address, port, and MCP endpoint path |
 
+### Enabling/disabling tool groups
+
+The `tool_groups` config object toggles whole groups of tools on or off (all
+enabled by default). A disabled group's tools are unregistered at startup, so
+they neither appear in tool listings nor accept calls — the same on both
+transports. The always-on diagnostics (`check_required_tools`, `health`) are not
+a group and can never be disabled.
+
+```json
+{
+  "tool_groups": { "discovery": false, "security": false }
+}
+```
+
+| Group key | Tools |
+| --- | --- |
+| `http` | curl_request, httpie_request, api_test |
+| `connectivity` | ping_host, traceroute_path, mtr_monitor, telnet_connect, netcat_test |
+| `dns` | nslookup_query, dig_query, host_lookup |
+| `discovery` | nmap_scan, service_discovery |
+| `system_network` | ss_connections, netstat_connections, arp_table, arping_host |
+| `monitoring` | system_status, cpu_usage, memory_usage, disk_usage, process_list |
+| `security` | port_scan, service_enumeration |
+
 ## MCP Client Configuration
 
 ### stdio (Claude Desktop / Cursor)
